@@ -13,6 +13,8 @@ jobs:
       contents: read
       packages: write
       id-token: write
+      actions: write
+      releases: write
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
