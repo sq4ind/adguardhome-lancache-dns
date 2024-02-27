@@ -4,6 +4,8 @@ on:
   push:
     branches:
       - main
+    tags:
+      - 'v*'
   workflow_dispatch:
 
 jobs:
@@ -16,6 +18,8 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v1
@@ -50,3 +54,34 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:latest
             ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:${{ steps.date.outputs.date }}
+
+      - name: Generate Commit Log
+        id: generate_commit_log
+        run: |
+          if [ $(git tag | wc -l) -gt 1 ]; then
+            PREVIOUS_TAG=$(git describe --tags --abbrev=0 $(git rev-list --tags --skip=1 --max-count=1))
+            COMMIT_LOG=$(git log $PREVIOUS_TAG..HEAD --pretty=format:"- %s")
+            echo "::set-output name=commit_log::$COMMIT_LOG"
+          else
+            echo "::set-output name=commit_log::Initial Release"
+          fi
+
+      - name: Create GitHub Release
+        id: create_release
+        uses: actions/create-release@v1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          tag_name: ${{ github.ref }}
+          release_name: Release ${{ github.ref }}
+          body: |
+            New release of AdGuardHome-Lancache-DNS.
+            
+            Docker images available:
+            - `ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:latest`
+            - `ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:${{ steps.date.outputs.date }}`
+            
+            ### Commits
+            ${{ steps.generate_commit_log.outputs.commit_log }}
+          draft: false
+          prerelease: false
