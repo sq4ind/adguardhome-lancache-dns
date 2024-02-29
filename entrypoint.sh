@@ -17,7 +17,7 @@ for var in "${env_vars[@]}"; do
 done
 
 # Update the cron job setup to source environment variables
-echo "$CRON_SCHEDULE /usr/local/bin/python /app/UpdateAdGuardDNSRewrites.py >> /var/log/cron.log 2>&1" | crontab -
+echo "$CRON_SCHEDULE /venv/bin/python /app/UpdateAdGuardDNSRewrites.py >> /var/log/cron.log 2>&1" | crontab -
 
 # Tail the cron log to keep the container running
 tail -f /var/log/cron.log
