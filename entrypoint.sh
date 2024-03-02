@@ -1,18 +1,16 @@
-#!/bin/bash
+#!/bin/sh
 
 # Create empty /var/log/cron.log
 touch /var/log/cron.log
 
 # Start the cron service
-service cron start
+crond
 
-# Declare which environmental variables to write in the /etc/environment
-declare -a env_vars=("ADGUARD_USERNAME" "ADGUARD_PASSWORD" "LANCACHE_SERVER" "ADGUARD_API" "ALL_SERVICES" "SERVICE_NAMES" "CRON_SCHEDULE")
-
-# Loop through the list and write each one to /etc/environment if it's set
-for var in "${env_vars[@]}"; do
-    if [[ -v $var ]]; then
-        echo "$var='${!var}'" >> /etc/environment
+# Loop through the list of environment variables and write each one to /etc/environment if it's set
+for var in ADGUARD_USERNAME ADGUARD_PASSWORD LANCACHE_SERVER ADGUARD_API ALL_SERVICES SERVICE_NAMES CRON_SCHEDULE; do
+    value=$(eval echo \$$var)
+    if [ ! -z "$value" ]; then
+        echo "$var='$value'" >> /etc/environment
     fi
 done
 
