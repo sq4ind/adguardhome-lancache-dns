@@ -46,8 +46,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:latest
             ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}
-            docker.io/sq4ind/adguardhome-lancache-dns:latest # Replace with your Docker Hub username and adjust the repository name as needed
-            docker.io/sq4ind/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }} # Replace with your Docker Hub username and adjust the repository name as needed
+            sq4ind/adguardhome-lancache-dns:latest
+            sq4ind/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}
 
       - name: Generate commit log
         id: generate_commit_log
