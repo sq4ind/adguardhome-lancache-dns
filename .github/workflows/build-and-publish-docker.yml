@@ -52,9 +52,9 @@ jobs:
       - name: Generate commit log
         id: generate_commit_log
         run: |
-          echo "commit_log<<EOF" >> $GITHUB_ENV
-          git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          echo "::set-output name=commit_log<<EOF"
+          git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:"- %s"
+          echo "EOF"
 
       - name: Create GitHub Release
         id: create_release
@@ -66,13 +66,13 @@ jobs:
           release_name: Release ${{ steps.extract_version.outputs.version }}
           body: |
             New release of AdGuardHome-Lancache-DNS.
-
+            
             Docker images available:
             - `ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:latest`
             - `ghcr.io/${{ github.repository }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}`
-
+            
             ### Commits
-            ${{ env.commit_log }}
+            ${{ steps.generate_commit_log.outputs.commit_log }}
           draft: false
           prerelease: false
 
