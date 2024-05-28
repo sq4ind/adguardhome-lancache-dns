@@ -1,6 +1,6 @@
 # Stage 1: Build
 # Use an Alpine version of the official Python 3.12 image as the base
-FROM python:3.12-alpine as builder
+FROM python:3.12-alpine3.20 as builder
 
 # Install build dependencies temporarily and remove them after use
 RUN mkdir /app \
@@ -15,7 +15,7 @@ COPY requirements.txt .
 RUN /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.12-alpine
+FROM python:3.12-alpine3.20
 
 # Install runtime dependencies if needed, then remove cache to keep image small
 RUN apk add --no-cache \
