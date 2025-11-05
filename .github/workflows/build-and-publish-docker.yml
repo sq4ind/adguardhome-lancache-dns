@@ -35,6 +35,51 @@ jobs:
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Release version: $VERSION"
 
+      - name: Generate changelog
+        id: changelog
+        run: |
+          echo "Generating changelog..."
+
+          # Get all tags sorted by version
+          TAGS=$(git tag -l 'v*' --sort=-version:refname)
+          echo "Available tags: $TAGS"
+
+          PREVIOUS_TAG=""
+          CURRENT_TAG="${GITHUB_REF#refs/tags/}"
+
+          # Find previous tag
+          for tag in $TAGS; do
+            if [ "$tag" != "$CURRENT_TAG" ]; then
+              PREVIOUS_TAG=$tag
+              break
+            fi
+          done
+
+          echo "Previous tag: $PREVIOUS_TAG"
+          echo "Current tag: $CURRENT_TAG"
+
+          # Generate changelog
+          if [ -z "$PREVIOUS_TAG" ]; then
+            echo "First release - showing all commits:"
+            CHANGELOG=$(git log --pretty=format:'- %s (%h)' --reverse | head -50)
+          else
+            echo "Showing commits since $PREVIOUS_TAG:"
+            CHANGELOG=$(git log $PREVIOUS_TAG..$CURRENT_TAG --pretty=format:'- %s (%h)')
+          fi
+
+          if [ -z "$CHANGELOG" ]; then
+            CHANGELOG="No changes detected in commit history"
+          fi
+
+          # Store changelog in output
+          {
+            echo 'changelog<<EOF'
+            echo "$CHANGELOG"
+            echo 'EOF'
+          } >> $GITHUB_OUTPUT
+
+          echo "Changelog generated successfully"
+
       - name: Login to GitHub Container Registry
         uses: docker/login-action@v3
         with:
@@ -66,18 +111,6 @@ jobs:
           provenance: false
           sbom: true
 
-      - name: Generate changelog
-        id: changelog
-        run: |
-          if git describe --tags --abbrev=0 &>/dev/null; then
-            CHANGELOG=$(git log $(git describe --tags --abbrev=0)..HEAD --pretty=format:'- %s (%h)')
-          else
-            CHANGELOG=$(git log --pretty=format:'- %s (%h)' | head -20)
-          fi
-          echo "changelog<<EOF" >> $GITHUB_OUTPUT
-          echo "$CHANGELOG" >> $GITHUB_OUTPUT
-          echo "EOF" >> $GITHUB_OUTPUT
-
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
         with:
@@ -87,6 +120,10 @@ jobs:
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
           body: |
             # AdGuardHome LanCache DNS Synchronizer v${{ steps.extract_version.outputs.version }}
+
+            ## Changes
+
+            ${{ steps.changelog.outputs.changelog }}
 
             ## Docker Images
 
@@ -109,9 +146,9 @@ jobs:
             - linux/arm64 (ARM 64-bit / Apple Silicon)
             - linux/arm/v7 (ARM 32-bit / Raspberry Pi)
 
-            ## Changes
+            ## Installation
 
-            ${{ steps.changelog.outputs.changelog }}
+            See [README](https://github.com/sq4ind/adguardhome-lancache-dns#installation-and-configuration) for installation instructions.
 
       - name: Image digest
         run: echo ${{ steps.docker_build.outputs.digest }}
