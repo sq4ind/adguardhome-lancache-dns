@@ -5,6 +5,9 @@
 
 set -e
 
+# Ensure venv is in PATH
+export PATH="/venv/bin:$PATH"
+
 # Source environment if available
 if [ -f /etc/environment ]; then
     set -a
@@ -50,14 +53,14 @@ if [ ! -f /app/UpdateAdGuardDNSRewrites.py ]; then
     exit 1
 fi
 
-# Try to import Python modules
-python -c "import requests; import urllib3" 2>/dev/null || {
-    echo "ERROR: Required Python modules not installed" >&2
+# Try to import Python modules with full path
+if ! /venv/bin/python -c "import requests; import urllib3" 2>/dev/null; then
+    echo "ERROR: Required Python modules not installed (requests or urllib3)" >&2
     exit 1
-}
+fi
 
 # Verify connectivity to AdGuard API (basic check)
-RESPONSE=$(python -c "
+RESPONSE=$(/venv/bin/python -c "
 import requests
 from requests.auth import HTTPBasicAuth
 try:
@@ -67,7 +70,7 @@ try:
     print(resp.status_code)
 except Exception as e:
     print('ERROR')
-" 2>/dev/null)
+" 2>/dev/null || echo "ERROR")
 
 if [ "$RESPONSE" = "ERROR" ]; then
     echo "WARNING: Cannot verify AdGuard API connectivity (may be temporary)" >&2
