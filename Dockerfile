@@ -29,10 +29,10 @@ WORKDIR /app
 COPY --from=builder /venv /venv
 
 # Copy application files
-COPY UpdateAdGuardDNSRewrites.py entrypoint.sh ./
+COPY UpdateAdGuardDNSRewrites.py entrypoint.sh healthcheck.sh ./
 
 # Make scripts executable
-RUN chmod +x UpdateAdGuardDNSRewrites.py entrypoint.sh
+RUN chmod +x UpdateAdGuardDNSRewrites.py entrypoint.sh healthcheck.sh
 
 # Add venv to PATH so cron can use python directly
 ENV PATH="/venv/bin:$PATH" \
@@ -56,7 +56,7 @@ ENV ALL_SERVICES="false" \
 
 # Health check - verify script runs without errors
 HEALTHCHECK --interval=6h --timeout=30s --start-period=30s --retries=2 \
-    CMD python /app/UpdateAdGuardDNSRewrites.py || exit 1
+    CMD /app/healthcheck.sh
 
 # Use the entrypoint script to start cron and keep the container running
 ENTRYPOINT ["./entrypoint.sh"]
