@@ -1,21 +1,42 @@
 #!/bin/sh
 
-# Create empty /var/log/cron.log
+set -e
+
+# Create log directory
+mkdir -p /var/log
 touch /var/log/cron.log
 
 # Start the cron service
 crond
 
-# Loop through the list of environment variables and write each one to /etc/environment if it's set
-for var in ADGUARD_USERNAME ADGUARD_PASSWORD LANCACHE_SERVER ADGUARD_API ALL_SERVICES SERVICE_NAMES CRON_SCHEDULE; do
+# Export environment variables for cron
+for var in \
+    ADGUARD_USERNAME \
+    ADGUARD_PASSWORD \
+    LANCACHE_SERVER \
+    ADGUARD_API \
+    ALL_SERVICES \
+    SERVICE_NAMES \
+    CRON_SCHEDULE \
+    LOG_LEVEL \
+    MAX_WORKERS \
+    BATCH_SIZE \
+    CACHE_FILE; do
     value=$(eval echo \$$var)
-    if [ ! -z "$value" ]; then
+    if [ -n "$value" ]; then
         echo "$var='$value'" >> /etc/environment
     fi
 done
 
-# Update the cron job setup to source environment variables
+# Setup cron job with proper environment
 echo "$CRON_SCHEDULE /venv/bin/python /app/UpdateAdGuardDNSRewrites.py >> /var/log/cron.log 2>&1" | crontab -
 
-# Tail the cron log to keep the container running
+# Display initial message
+echo "Cron service started with schedule: $CRON_SCHEDULE"
+echo "Log file: /var/log/cron.log"
+echo "Services: $([ "$ALL_SERVICES" = 'true' ] && echo 'ALL' || echo "$SERVICE_NAMES")"
+echo ""
+echo "Tailing cron logs (press Ctrl+C to stop):"
+
+# Keep container running and tail logs
 tail -f /var/log/cron.log
