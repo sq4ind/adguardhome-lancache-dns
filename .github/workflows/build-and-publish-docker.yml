@@ -151,29 +151,54 @@ jobs:
           severity: 'CRITICAL,HIGH'
           ignore-unfixed: true
 
-      - name: Upload Trivy scan results to GitHub Security tab
+      - name: List generated SARIF files
+        run: |
+          echo "Checking for SARIF files..."
+          ls -lah trivy-results-*.sarif || echo "No SARIF files found"
+
+      - name: Organize SARIF files for upload
+        run: |
+          mkdir -p sarif-reports
+          for file in trivy-results-*.sarif; do
+            if [ -f "$file" ]; then
+              cp "$file" sarif-reports/
+              echo "Copied $file to sarif-reports/"
+            fi
+          done
+          ls -lah sarif-reports/
+
+      - name: Upload amd64 SARIF to GitHub Security tab
         uses: github/codeql-action/upload-sarif@v3
         if: always()
         with:
-          sarif_file: |
-            trivy-results-amd64.sarif
-            trivy-results-arm64.sarif
-            trivy-results-armv7.sarif
-          category: 'Trivy Image Scan'
+          sarif_file: sarif-reports/trivy-results-amd64.sarif
+          category: 'Trivy Image Scan - amd64'
+
+      - name: Upload arm64 SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: sarif-reports/trivy-results-arm64.sarif
+          category: 'Trivy Image Scan - arm64'
+
+      - name: Upload armv7 SARIF to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: sarif-reports/trivy-results-armv7.sarif
+          category: 'Trivy Image Scan - armv7'
 
       - name: Generate Trivy scan reports (JSON)
         run: |
           echo "Generating detailed Trivy reports for all platforms..."
+          mkdir -p json-reports
 
           for platform in amd64 arm64 armv7; do
             INPUT_PATH="/tmp/image-${platform}"
-            if [ "$platform" = "armv7" ]; then
-              INPUT_PATH="/tmp/image-armv7"
-            fi
 
             docker run --rm \
               -v "$INPUT_PATH":/image \
-              -v "$PWD":/reports \
+              -v "$PWD/json-reports":/reports \
               aquasec/trivy:latest image \
               --input /image \
               --format json \
@@ -181,12 +206,14 @@ jobs:
               --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
           done
 
+          ls -lah json-reports/
+
       - name: Upload Trivy scan reports as artifacts
         uses: actions/upload-artifact@v4
         if: always()
         with:
           name: trivy-scan-reports
-          path: trivy-report-*.json
+          path: json-reports/trivy-report-*.json
           retention-days: 30
 
       - name: Build and push Docker image (multiplatform)
