@@ -85,7 +85,7 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
-      - name: Build and push Docker image (multiplatform - with scan)
+      - name: Build and push Docker image (multiplatform)
         uses: docker/build-push-action@v5
         id: build_push
         with:
@@ -125,23 +125,15 @@ jobs:
           mkdir -p reports
 
           docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
-            aquasec/trivy:latest image \
-            --format json \
-            --output /var/lib/trivy/report.json \
-            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
-            "ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.version }}"
-
-          # Copy the report
-          docker run --rm \
-            -v /var/run/docker.sock:/var/run/docker.sock \
             -v "$PWD/reports":/output \
             aquasec/trivy:latest image \
             --format json \
             --output /output/trivy-full-report.json \
             --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            --scanners vuln \
             "ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.version }}"
 
+          echo "Trivy report generated successfully"
           ls -lah reports/
 
       - name: Upload detailed scan report as artifact
