@@ -1,6 +1,6 @@
 # Stage 1: Build
 # Use an Alpine version of the official Python 3.12 image as the base
-FROM python:3.12-alpine3.20 as builder
+FROM python:3.14-alpine as builder
 
 # Install build dependencies temporarily and remove them after use
 RUN mkdir /app \
@@ -13,7 +13,7 @@ COPY requirements.txt .
 RUN /venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.12-alpine3.20
+FROM python:3.14-alpine
 
 # Install runtime dependencies (tzdata for timezone support, busybox-openrc for cron)
 RUN apk add --no-cache \
