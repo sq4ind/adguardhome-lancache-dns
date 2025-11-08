@@ -85,139 +85,9 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
-      - name: Build Docker image (amd64)
+      - name: Build and push Docker image (multiplatform - with scan)
         uses: docker/build-push-action@v5
-        id: build_amd64
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          platforms: linux/amd64
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}-amd64-test
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          outputs: type=oci,dest=/tmp/image-amd64
-
-      - name: Scan amd64 image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          input: /tmp/image-amd64
-          format: 'sarif'
-          output: 'trivy-results-amd64.sarif'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-
-      - name: Build Docker image (arm64)
-        uses: docker/build-push-action@v5
-        id: build_arm64
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          platforms: linux/arm64
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}-arm64-test
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          outputs: type=oci,dest=/tmp/image-arm64
-
-      - name: Scan arm64 image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          input: /tmp/image-arm64
-          format: 'sarif'
-          output: 'trivy-results-arm64.sarif'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-
-      - name: Build Docker image (arm/v7)
-        uses: docker/build-push-action@v5
-        id: build_armv7
-        with:
-          context: .
-          file: ./Dockerfile
-          push: false
-          platforms: linux/arm/v7
-          tags: |
-            ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}-armv7-test
-          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
-          outputs: type=oci,dest=/tmp/image-armv7
-
-      - name: Scan arm/v7 image with Trivy
-        uses: aquasecurity/trivy-action@0.28.0
-        with:
-          input: /tmp/image-armv7
-          format: 'sarif'
-          output: 'trivy-results-armv7.sarif'
-          severity: 'CRITICAL,HIGH'
-          ignore-unfixed: true
-
-      - name: List generated SARIF files
-        run: |
-          echo "Checking for SARIF files..."
-          ls -lah trivy-results-*.sarif || echo "No SARIF files found"
-
-      - name: Organize SARIF files for upload
-        run: |
-          mkdir -p sarif-reports
-          for file in trivy-results-*.sarif; do
-            if [ -f "$file" ]; then
-              cp "$file" sarif-reports/
-              echo "Copied $file to sarif-reports/"
-            fi
-          done
-          ls -lah sarif-reports/
-
-      - name: Upload amd64 SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: sarif-reports/trivy-results-amd64.sarif
-          category: 'Trivy Image Scan - amd64'
-
-      - name: Upload arm64 SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: sarif-reports/trivy-results-arm64.sarif
-          category: 'Trivy Image Scan - arm64'
-
-      - name: Upload armv7 SARIF to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: sarif-reports/trivy-results-armv7.sarif
-          category: 'Trivy Image Scan - armv7'
-
-      - name: Generate Trivy scan reports (JSON)
-        run: |
-          echo "Generating detailed Trivy reports for all platforms..."
-          mkdir -p json-reports
-
-          for platform in amd64 arm64 armv7; do
-            INPUT_PATH="/tmp/image-${platform}"
-
-            docker run --rm \
-              -v "$INPUT_PATH":/image \
-              -v "$PWD/json-reports":/reports \
-              aquasec/trivy:latest image \
-              --input /image \
-              --format json \
-              --output /reports/trivy-report-${platform}.json \
-              --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
-          done
-
-          ls -lah json-reports/
-
-      - name: Upload Trivy scan reports as artifacts
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: trivy-scan-reports
-          path: json-reports/trivy-report-*.json
-          retention-days: 30
-
-      - name: Build and push Docker image (multiplatform)
-        uses: docker/build-push-action@v5
+        id: build_push
         with:
           context: .
           file: ./Dockerfile
@@ -232,6 +102,55 @@ jobs:
           cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache,mode=max
           provenance: false
           sbom: true
+
+      - name: Run Trivy vulnerability scanner on pushed image
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          image-ref: 'ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.version }}'
+          format: 'sarif'
+          output: 'trivy-results.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Upload Trivy results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: trivy-results.sarif
+          category: 'Trivy Image Scan'
+
+      - name: Generate detailed Trivy JSON report
+        run: |
+          echo "Generating detailed Trivy report..."
+          mkdir -p reports
+
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            aquasec/trivy:latest image \
+            --format json \
+            --output /var/lib/trivy/report.json \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            "ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.version }}"
+
+          # Copy the report
+          docker run --rm \
+            -v /var/run/docker.sock:/var/run/docker.sock \
+            -v "$PWD/reports":/output \
+            aquasec/trivy:latest image \
+            --format json \
+            --output /output/trivy-full-report.json \
+            --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL \
+            "ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.version }}"
+
+          ls -lah reports/
+
+      - name: Upload detailed scan report as artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trivy-scan-report
+          path: reports/trivy-full-report.json
+          retention-days: 30
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v1
@@ -273,7 +192,7 @@ jobs:
 
             ## Security
 
-            This release includes vulnerability scanning for all supported platforms. See the Security tab for detailed scan results.
+            This release includes vulnerability scanning. See the Security tab for detailed scan results.
 
             ## Installation
 
