@@ -13,6 +13,7 @@ jobs:
       contents: write
       packages: write
       id-token: write
+      security-events: write
 
     steps:
       - name: Checkout code
@@ -39,14 +40,11 @@ jobs:
         id: changelog
         run: |
           echo "Generating changelog..."
-
           # Get all tags sorted by version
           TAGS=$(git tag -l 'v*' --sort=-version:refname)
           echo "Available tags: $TAGS"
-
           PREVIOUS_TAG=""
           CURRENT_TAG="${GITHUB_REF#refs/tags/}"
-
           # Find previous tag
           for tag in $TAGS; do
             if [ "$tag" != "$CURRENT_TAG" ]; then
@@ -54,10 +52,8 @@ jobs:
               break
             fi
           done
-
           echo "Previous tag: $PREVIOUS_TAG"
           echo "Current tag: $CURRENT_TAG"
-
           # Generate changelog
           if [ -z "$PREVIOUS_TAG" ]; then
             echo "First release - showing all commits:"
@@ -66,18 +62,13 @@ jobs:
             echo "Showing commits since $PREVIOUS_TAG:"
             CHANGELOG=$(git log $PREVIOUS_TAG..$CURRENT_TAG --pretty=format:'- %s (%h)')
           fi
-
           if [ -z "$CHANGELOG" ]; then
             CHANGELOG="No changes detected in commit history"
           fi
-
           # Store changelog in output
-          {
-            echo 'changelog<<EOF'
-            echo "$CHANGELOG"
-            echo 'EOF'
-          } >> $GITHUB_OUTPUT
-
+          echo 'changelog<<EOF' >> $GITHUB_OUTPUT
+          echo "$CHANGELOG" >> $GITHUB_OUTPUT
+          echo 'EOF' >> $GITHUB_OUTPUT
           echo "Changelog generated successfully"
 
       - name: Login to GitHub Container Registry
@@ -94,7 +85,111 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_ACCESS_TOKEN }}
 
-      - name: Build and push Docker image
+      - name: Build Docker image (amd64)
+        uses: docker/build-push-action@v5
+        id: build_amd64
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          platforms: linux/amd64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}-amd64-test
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          outputs: type=oci,dest=/tmp/image-amd64
+
+      - name: Scan amd64 image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          input: /tmp/image-amd64
+          format: 'sarif'
+          output: 'trivy-results-amd64.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Build Docker image (arm64)
+        uses: docker/build-push-action@v5
+        id: build_arm64
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          platforms: linux/arm64
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}-arm64-test
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          outputs: type=oci,dest=/tmp/image-arm64
+
+      - name: Scan arm64 image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          input: /tmp/image-arm64
+          format: 'sarif'
+          output: 'trivy-results-arm64.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Build Docker image (arm/v7)
+        uses: docker/build-push-action@v5
+        id: build_armv7
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          platforms: linux/arm/v7
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}-armv7-test
+          cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:buildcache
+          outputs: type=oci,dest=/tmp/image-armv7
+
+      - name: Scan arm/v7 image with Trivy
+        uses: aquasecurity/trivy-action@0.28.0
+        with:
+          input: /tmp/image-armv7
+          format: 'sarif'
+          output: 'trivy-results-armv7.sarif'
+          severity: 'CRITICAL,HIGH'
+          ignore-unfixed: true
+
+      - name: Upload Trivy scan results to GitHub Security tab
+        uses: github/codeql-action/upload-sarif@v3
+        if: always()
+        with:
+          sarif_file: |
+            trivy-results-amd64.sarif
+            trivy-results-arm64.sarif
+            trivy-results-armv7.sarif
+          category: 'Trivy Image Scan'
+
+      - name: Generate Trivy scan reports (JSON)
+        run: |
+          echo "Generating detailed Trivy reports for all platforms..."
+
+          for platform in amd64 arm64 armv7; do
+            INPUT_PATH="/tmp/image-${platform}"
+            if [ "$platform" = "armv7" ]; then
+              INPUT_PATH="/tmp/image-armv7"
+            fi
+
+            docker run --rm \
+              -v "$INPUT_PATH":/image \
+              -v "$PWD":/reports \
+              aquasec/trivy:latest image \
+              --input /image \
+              --format json \
+              --output /reports/trivy-report-${platform}.json \
+              --severity UNKNOWN,LOW,MEDIUM,HIGH,CRITICAL
+          done
+
+      - name: Upload Trivy scan reports as artifacts
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: trivy-scan-reports
+          path: trivy-report-*.json
+          retention-days: 30
+
+      - name: Build and push Docker image (multiplatform)
         uses: docker/build-push-action@v5
         with:
           context: .
@@ -130,25 +225,32 @@ jobs:
             Available on both registries:
 
             **GitHub Container Registry (GHCR):**
+
             ```bash
             docker pull ghcr.io/${{ github.repository }}:${{ steps.extract_version.outputs.version }}
             docker pull ghcr.io/${{ github.repository }}:latest
             ```
 
             **Docker Hub:**
+
             ```bash
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:${{ steps.extract_version.outputs.version }}
             docker pull ${{ secrets.DOCKERHUB_USERNAME }}/adguardhome-lancache-dns:latest
             ```
 
             **Supported Platforms:**
+
             - linux/amd64 (Intel/AMD x86_64)
             - linux/arm64 (ARM 64-bit / Apple Silicon)
             - linux/arm/v7 (ARM 32-bit / Raspberry Pi)
+
+            ## Security
+
+            This release includes vulnerability scanning for all supported platforms. See the Security tab for detailed scan results.
 
             ## Installation
 
             See [README](https://github.com/sq4ind/adguardhome-lancache-dns#installation-and-configuration) for installation instructions.
 
       - name: Image digest
-        run: echo ${{ steps.docker_build.outputs.digest }}
+        run: echo "Release ${{ steps.extract_version.outputs.version }} published successfully"
